@@ -1,0 +1,12 @@
+rules:
+  # Bronze
+  config-flow: done
+  entity-unique-id: done
+  action-setup: done
+
+  # Silver
+  entity-unavailable: done
+  parallel-updates: done
+
+  # Gold
+  diagnostics: done

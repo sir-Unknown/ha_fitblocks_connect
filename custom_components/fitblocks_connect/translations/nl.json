@@ -1,0 +1,17 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Fitblocks Connect",
+        "description": "Verbind je Fitblocks Connect-account.",
+        "data": {
+          "base_url": "Base URL",
+          "box": "Box",
+          "username": "E-mail",
+          "password": "Wachtwoord",
+          "display_name": "Weergavenaam (optioneel)"
+        }
+      }
+    }
+  }
+}

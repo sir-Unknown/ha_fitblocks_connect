@@ -1,0 +1,39 @@
+enroll:
+  name: Enroll in lesson
+  description: Enroll in a lesson in the Fitblocks Connect schedule.
+  fields:
+    start:
+      name: Start
+      description: Start datetime of the lesson.
+      example: "2025-12-03T11:00:00+01:00"
+      selector:
+        datetime: {}
+    end:
+      name: End
+      description: End datetime of the lesson.
+      example: "2025-12-03T12:00:00+01:00"
+      selector:
+        datetime: {}
+    class_type_id:
+      name: Class type ID
+      description: UUID of the class type (classTypeId).
+      example: "29440034-20f1-477e-9af4-13f79fbf8218"
+      selector:
+        text: {}
+
+unenroll:
+  name: Unenroll from lesson
+  description: Unenroll from a lesson in the Fitblocks Connect schedule.
+  fields:
+    schedule_registration_id:
+      name: Schedule registration ID
+      description: UUID of the schedule registration (scheduleRegistrationId).
+      example: "ffe32a40-4c71-4ebf-96f6-0f0aaa929fec"
+      selector:
+        text: {}
+    class_type_id:
+      name: Class type ID
+      description: UUID of the class type (classTypeId).
+      example: "29440034-20f1-477e-9af4-13f79fbf8218"
+      selector:
+        text: {}
