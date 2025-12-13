@@ -84,11 +84,6 @@ class FitblocksConnectCoordinator(
         except FitblocksConnectAuthError as err:
             raise ConfigEntryAuthFailed from err
 
-        except TimeoutError as err:
-            raise UpdateFailed(
-                "Timeout while fetching Fitblocks Connect schedule"
-            ) from err
-
         except FitblocksConnectError as err:
             raise UpdateFailed(
                 f"Error communicating with Fitblocks Connect API: {err}"

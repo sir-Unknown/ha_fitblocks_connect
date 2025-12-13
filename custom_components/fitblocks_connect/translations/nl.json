@@ -24,6 +24,7 @@
     "error": {
       "cannot_connect": "Kan geen verbinding maken.",
       "invalid_auth": "Ongeldige aanmelding.",
+      "ssl_error": "Kan het SSL-certificaat van de server niet verifiëren. Controleer je systeemdatum en -tijd en probeer het opnieuw.",
       "unknown": "Onverwachte fout."
     }
   },

@@ -24,6 +24,7 @@
     "error": {
       "cannot_connect": "Failed to connect.",
       "invalid_auth": "Invalid authentication.",
+      "ssl_error": "Could not verify the server's SSL certificate. Check your system time and try again.",
       "unknown": "Unexpected error."
     }
   },

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ssl
 from typing import Any
 
 import aiohttp
@@ -26,6 +27,23 @@ from .const import (
     LOGGER,
 )
 from .models import FitblocksConnectConfigEntry
+
+
+def _is_ssl_error(err: BaseException) -> bool:
+    """Return if an error (or any of its causes) is related to SSL verification."""
+    current: BaseException | None = err
+    while current is not None:
+        if isinstance(
+            current,
+            (
+                aiohttp.ClientConnectorCertificateError,
+                aiohttp.ClientSSLError,
+                ssl.SSLCertVerificationError,
+            ),
+        ):
+            return True
+        current = current.__cause__
+    return False
 
 
 class FitblocksConnectConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -82,11 +100,13 @@ class FitblocksConnectConfigFlow(ConfigFlow, domain=DOMAIN):
 
         except FitblocksConnectAuthError:
             self._errors["base"] = "invalid_auth"
-        except FitblocksConnectError:
-            self._errors["base"] = "cannot_connect"
-        except (aiohttp.ClientError, TimeoutError):
-            LOGGER.exception("Network error during config flow login/branding")
-            self._errors["base"] = "cannot_connect"
+        except FitblocksConnectError as err:
+            self._errors["base"] = (
+                "ssl_error" if _is_ssl_error(err) else "cannot_connect"
+            )
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Unexpected error during config flow login/branding")
+            self._errors["base"] = "unknown"
 
         if self._errors:
             return self._show_user_form(user_input)
@@ -159,11 +179,13 @@ class FitblocksConnectConfigFlow(ConfigFlow, domain=DOMAIN):
                 await client.async_login()
             except FitblocksConnectAuthError:
                 self._errors["base"] = "invalid_auth"
-            except FitblocksConnectError:
-                self._errors["base"] = "cannot_connect"
-            except (aiohttp.ClientError, TimeoutError):
-                LOGGER.exception("Network error during reauth")
-                self._errors["base"] = "cannot_connect"
+            except FitblocksConnectError as err:
+                self._errors["base"] = (
+                    "ssl_error" if _is_ssl_error(err) else "cannot_connect"
+                )
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("Unexpected error during reauth")
+                self._errors["base"] = "unknown"
 
             if not self._errors:
                 new_data = dict(data)

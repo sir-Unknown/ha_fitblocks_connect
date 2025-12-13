@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 import html as html_module
@@ -36,6 +38,14 @@ class FitblocksConnectError(Exception):
 
 class FitblocksConnectAuthError(FitblocksConnectError):
     """Raised when authentication fails."""
+
+
+class FitblocksConnectConnectionError(FitblocksConnectError):
+    """Raised when communication with the server fails."""
+
+
+class FitblocksConnectSSLError(FitblocksConnectConnectionError):
+    """Raised when SSL certificate verification fails."""
 
 
 class FitblocksConnectApiError(FitblocksConnectError):
@@ -130,19 +140,41 @@ class FitblocksConnectClient:
         endpoint = endpoint.lstrip("/")
         return f"{self._config.base_url}/{self._config.box}/{endpoint}"
 
+    @asynccontextmanager
+    async def _request(
+        self,
+        method: str,
+        url: str,
+        **kwargs: Any,
+    ) -> AsyncIterator[aiohttp.ClientResponse]:
+        """Perform an HTTP request with consistent error handling."""
+        try:
+            async with asyncio.timeout(REQUEST_TIMEOUT):
+                async with self._session.request(method, url, **kwargs) as resp:
+                    yield resp
+        except aiohttp.ClientConnectorCertificateError as err:
+            raise FitblocksConnectSSLError(
+                "SSL certificate verification failed"
+            ) from err
+        except aiohttp.ClientSSLError as err:
+            raise FitblocksConnectSSLError("SSL error") from err
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise FitblocksConnectConnectionError(
+                "Error communicating with the server"
+            ) from err
+
     async def async_login(self) -> None:
         """Perform login flow and store CSRF token and cookies."""
         login_url = self._build_url("login")
 
         LOGGER.debug("FitblocksConnect: GET login page %s", login_url)
-        async with asyncio.timeout(REQUEST_TIMEOUT):
-            async with self._session.get(login_url) as resp:
-                if resp.status != 200:
-                    LOGGER.debug("Login page returned status=%s", resp.status)
-                    raise FitblocksConnectError(
-                        f"Unexpected status for login page: {resp.status}"
-                    )
-                html = await resp.text()
+        async with self._request("GET", login_url) as resp:
+            if resp.status != 200:
+                LOGGER.debug("Login page returned status=%s", resp.status)
+                raise FitblocksConnectError(
+                    f"Unexpected status for login page: {resp.status}"
+                )
+            html = await resp.text()
         csrf = self._extract_csrf_token(html)
         if not csrf:
             raise FitblocksConnectError("CSRF token not found on login page")
@@ -160,19 +192,19 @@ class FitblocksConnectClient:
         }
 
         LOGGER.debug("FitblocksConnect: POST login")
-        async with asyncio.timeout(REQUEST_TIMEOUT):
-            async with self._session.post(
-                login_url,
-                data=form_data,
-                headers=headers,
-            ) as post_resp:
-                if post_resp.status not in (200, 302):
-                    LOGGER.debug("Login failed status=%s", post_resp.status)
-                    if post_resp.status in (401, 403):
-                        raise FitblocksConnectAuthError("Invalid credentials")
-                    raise FitblocksConnectError(
-                        f"Login failed with status {post_resp.status}"
-                    )
+        async with self._request(
+            "POST",
+            login_url,
+            data=form_data,
+            headers=headers,
+        ) as post_resp:
+            if post_resp.status not in (200, 302):
+                LOGGER.debug("Login failed status=%s", post_resp.status)
+                if post_resp.status in (401, 403):
+                    raise FitblocksConnectAuthError("Invalid credentials")
+                raise FitblocksConnectError(
+                    f"Login failed with status {post_resp.status}"
+                )
 
         try:
             await self._async_refresh_csrf_from_schedule()
@@ -188,15 +220,14 @@ class FitblocksConnectClient:
         LOGGER.debug(
             "FitblocksConnect: GET schedule page %s for CSRF refresh", schedule_url
         )
-        async with asyncio.timeout(REQUEST_TIMEOUT):
-            async with self._session.get(schedule_url) as resp:
-                if resp.status != 200:
-                    LOGGER.debug(
-                        "Schedule page status=%s; keeping existing CSRF",
-                        resp.status,
-                    )
-                    return
-                html = await resp.text()
+        async with self._request("GET", schedule_url) as resp:
+            if resp.status != 200:
+                LOGGER.debug(
+                    "Schedule page status=%s; keeping existing CSRF",
+                    resp.status,
+                )
+                return
+            html = await resp.text()
         csrf = self._extract_csrf_token(html)
         if csrf:
             self._csrf_token = csrf
@@ -250,23 +281,21 @@ class FitblocksConnectClient:
 
         LOGGER.debug("FitblocksConnect: GET schedule/json %s params=%s", url, params)
 
-        async with asyncio.timeout(REQUEST_TIMEOUT):
-            async with self._session.get(
-                url,
-                params=params,
-                headers=headers,
-            ) as resp:
-                if resp.status == 401:
-                    raise FitblocksConnectAuthError(
-                        "Unauthorized while fetching schedule"
-                    )
-                if resp.status != 200:
-                    LOGGER.debug("Schedule request failed status=%s", resp.status)
-                    raise FitblocksConnectApiError(
-                        f"Unexpected status from schedule/json: {resp.status}"
-                    )
-                data: dict[str, Any] = await resp.json()
-                return data
+        async with self._request(
+            "GET",
+            url,
+            params=params,
+            headers=headers,
+        ) as resp:
+            if resp.status == 401:
+                raise FitblocksConnectAuthError("Unauthorized while fetching schedule")
+            if resp.status != 200:
+                LOGGER.debug("Schedule request failed status=%s", resp.status)
+                raise FitblocksConnectApiError(
+                    f"Unexpected status from schedule/json: {resp.status}"
+                )
+            data: dict[str, Any] = await resp.json()
+            return data
 
     async def async_get_class_type_details(
         self,
@@ -289,25 +318,23 @@ class FitblocksConnectClient:
 
         LOGGER.debug("FitblocksConnect: GET classTypeDetails %s params=%s", url, params)
 
-        async with asyncio.timeout(REQUEST_TIMEOUT):
-            async with self._session.get(
-                url,
-                params=params,
-                headers=headers,
-            ) as resp:
-                if resp.status == 401:
-                    raise FitblocksConnectAuthError(
-                        "Unauthorized while fetching classTypeDetails"
-                    )
-                if resp.status != 200:
-                    LOGGER.debug(
-                        "classTypeDetails request failed status=%s", resp.status
-                    )
-                    raise FitblocksConnectApiError(
-                        f"Unexpected status from classTypeDetails: {resp.status}"
-                    )
-                data: dict[str, Any] = await resp.json()
-                return data
+        async with self._request(
+            "GET",
+            url,
+            params=params,
+            headers=headers,
+        ) as resp:
+            if resp.status == 401:
+                raise FitblocksConnectAuthError(
+                    "Unauthorized while fetching classTypeDetails"
+                )
+            if resp.status != 200:
+                LOGGER.debug("classTypeDetails request failed status=%s", resp.status)
+                raise FitblocksConnectApiError(
+                    f"Unexpected status from classTypeDetails: {resp.status}"
+                )
+            data: dict[str, Any] = await resp.json()
+            return data
 
     async def async_enroll(
         self,
@@ -330,26 +357,26 @@ class FitblocksConnectClient:
 
         LOGGER.debug("FitblocksConnect: POST enroll %s", url)
 
-        async with asyncio.timeout(REQUEST_TIMEOUT):
-            async with self._session.post(
-                url,
-                json=payload,
-                headers=headers,
-            ) as resp:
-                if resp.status == 401:
-                    raise FitblocksConnectAuthError("Unauthorized while enrolling")
+        async with self._request(
+            "POST",
+            url,
+            json=payload,
+            headers=headers,
+        ) as resp:
+            if resp.status == 401:
+                raise FitblocksConnectAuthError("Unauthorized while enrolling")
 
-                if resp.status != 200:
-                    LOGGER.debug("Enroll request failed status=%s", resp.status)
-                    raise FitblocksConnectApiError(
-                        f"Unexpected status from subscribeToScheduleItem: {resp.status}"
-                    )
+            if resp.status != 200:
+                LOGGER.debug("Enroll request failed status=%s", resp.status)
+                raise FitblocksConnectApiError(
+                    f"Unexpected status from subscribeToScheduleItem: {resp.status}"
+                )
 
-                result: Any = await resp.json(content_type=None)
-                if isinstance(result, dict) and (status := result.get("status")):
-                    return str(status)
-                # Some environments do not return an explicit status; HTTP 200 is sufficient
-                return "success"
+            result: Any = await resp.json(content_type=None)
+            if isinstance(result, dict) and (status := result.get("status")):
+                return str(status)
+            # Some environments do not return an explicit status; HTTP 200 is sufficient
+            return "success"
 
     async def async_unenroll(
         self,
@@ -370,24 +397,24 @@ class FitblocksConnectClient:
 
         LOGGER.debug("FitblocksConnect: POST unenroll %s", url)
 
-        async with asyncio.timeout(REQUEST_TIMEOUT):
-            async with self._session.post(
-                url,
-                json=payload,
-                headers=headers,
-            ) as resp:
-                if resp.status == 401:
-                    raise FitblocksConnectAuthError("Unauthorized while unenrolling")
+        async with self._request(
+            "POST",
+            url,
+            json=payload,
+            headers=headers,
+        ) as resp:
+            if resp.status == 401:
+                raise FitblocksConnectAuthError("Unauthorized while unenrolling")
 
-                if resp.status != 200:
-                    LOGGER.debug("Unenroll request failed status=%s", resp.status)
-                    raise FitblocksConnectApiError(
-                        f"Unexpected status from unsubscribeFromScheduleItem: {resp.status}"
-                    )
+            if resp.status != 200:
+                LOGGER.debug("Unenroll request failed status=%s", resp.status)
+                raise FitblocksConnectApiError(
+                    f"Unexpected status from unsubscribeFromScheduleItem: {resp.status}"
+                )
 
-                await resp.json(content_type=None)
-                # The API uses only the HTTP status as the success indicator
-                return True
+            await resp.json(content_type=None)
+            # The API uses only the HTTP status as the success indicator
+            return True
 
     async def async_get_membership(self) -> dict[str, Any]:
         """Stub for the membership/credits API (not implemented yet)."""
@@ -422,12 +449,11 @@ class FitblocksConnectClient:
         url = self._build_url("")  # /{box}/
         LOGGER.debug("FitblocksConnect: GET branding page %s", url)
 
-        async with asyncio.timeout(REQUEST_TIMEOUT):
-            async with self._session.get(url) as resp:
-                if resp.status != 200:
-                    LOGGER.debug("Branding page status=%s", resp.status)
-                    return None
-                html = await resp.text()
+        async with self._request("GET", url) as resp:
+            if resp.status != 200:
+                LOGGER.debug("Branding page status=%s", resp.status)
+                return None
+            html = await resp.text()
         name = self._extract_brand_name(html)
 
         self._branding_name = name
