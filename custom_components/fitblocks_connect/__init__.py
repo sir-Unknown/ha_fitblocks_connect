@@ -6,9 +6,10 @@ from typing import cast
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigEntryState
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.const import ATTR_CONFIG_ENTRY_ID, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -21,25 +22,25 @@ from .const import CONF_BASE_URL, CONF_BOX, DOMAIN, LOGGER, PLATFORMS
 from .coordinator import FitblocksConnectCoordinator
 from .models import FitblocksConnectConfigEntry, FitblocksConnectRuntimeData
 
+MIGRATION_MINOR_VERSION = 2
 
-async def async_setup(_hass: HomeAssistant, _config: dict) -> bool:
-    """Set up via YAML (niet gebruikt, alleen config entries)."""
+
+async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
+    """Set up the Fitblocks Connect integration."""
+    await _async_register_services(hass)
     return True
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: FitblocksConnectConfigEntry
 ) -> bool:
-    """Set up fitblocks_connect vanaf een config entry."""
-    domain_data = hass.data.setdefault(DOMAIN, {})
-    domain_data["entry_count"] = domain_data.get("entry_count", 0) + 1
-
+    """Set up Fitblocks Connect from a config entry."""
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
 
     base_url: str = entry.data[CONF_BASE_URL]
     box: str = entry.data[CONF_BOX]
-    username: str = entry.data["username"]
-    password: str = entry.data["password"]
+    username: str = entry.data[CONF_USERNAME]
+    password: str = entry.data[CONF_PASSWORD]
 
     session = async_get_clientsession(hass)
     client = FitblocksConnectClient(
@@ -67,53 +68,116 @@ async def async_setup_entry(
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    await _async_register_services(hass)
-
     return True
 
 
 async def async_unload_entry(
     hass: HomeAssistant, entry: FitblocksConnectConfigEntry
 ) -> bool:
-    """Unload een config entry."""
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    """Unload a config entry."""
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
-    if unload_ok:
-        domain_data = hass.data.get(DOMAIN)
-        if domain_data:
-            domain_data["entry_count"] = max(
-                0, domain_data.get("entry_count", 1) - 1
-            )
-            if domain_data.get("entry_count", 0) == 0:
-                await _async_unregister_services(hass)
 
-    return unload_ok
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate old entry data to the current format."""
+    if entry.domain != DOMAIN:
+        return False
+
+    if entry.minor_version >= MIGRATION_MINOR_VERSION:
+        return True
+
+    data = dict(entry.data)
+    options = dict(entry.options)
+
+    if (
+        display_name := data.pop("display_name", None)
+    ) and "display_name" not in options:
+        options["display_name"] = display_name
+
+    if CONF_USERNAME not in data and (username := data.pop("username", None)):
+        data[CONF_USERNAME] = username
+    if CONF_PASSWORD not in data and (password := data.pop("password", None)):
+        data[CONF_PASSWORD] = password
+
+    hass.config_entries.async_update_entry(
+        entry,
+        data=data,
+        options=options,
+        minor_version=MIGRATION_MINOR_VERSION,
+    )
+    return True
 
 
 async def _async_register_services(hass: HomeAssistant) -> None:
-    """Domeinservices registreren (eenmalig)."""
+    """Register domain services (one-time)."""
     domain_data = hass.data.setdefault(DOMAIN, {})
     if domain_data.get("services_registered"):
         return
 
     LOGGER.debug("Registering fitblocks_connect services")
 
-    async def _async_get_single_entry_data() -> FitblocksConnectRuntimeData:
-        """De enige config entry data voor dit domein pakken."""
-        entries = _async_loaded_runtime_data(hass)
-        if not entries:
-            raise HomeAssistantError("fitblocks_connect is not configured")
-        return entries[0]
+    def _get_loaded_entry_or_raise(
+        config_entry_id: str | None,
+    ) -> FitblocksConnectConfigEntry:
+        """Return a loaded config entry, optionally selected by ID."""
+        if config_entry_id:
+            entry = hass.config_entries.async_get_entry(config_entry_id)
+            if entry is None or entry.domain != DOMAIN:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="config_entry_not_found",
+                )
+            if entry.state is not ConfigEntryState.LOADED:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="config_entry_not_loaded",
+                )
+            return cast(FitblocksConnectConfigEntry, entry)
+
+        loaded = [
+            entry
+            for entry in hass.config_entries.async_entries(DOMAIN)
+            if entry.state is ConfigEntryState.LOADED
+        ]
+        if not loaded:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="no_loaded_entries",
+            )
+        if len(loaded) > 1:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="multiple_entries_specify_id",
+            )
+        return cast(FitblocksConnectConfigEntry, loaded[0])
+
+    def _get_runtime_data_or_raise(
+        entry: FitblocksConnectConfigEntry,
+    ) -> FitblocksConnectRuntimeData:
+        """Return runtime data for a loaded entry."""
+        if entry.runtime_data is None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="config_entry_not_ready",
+            )
+        return cast(FitblocksConnectRuntimeData, entry.runtime_data)
 
     async def handle_enroll(call: ServiceCall) -> None:
-        """Service fitblocks_connect.enroll."""
-        entry_data = await _async_get_single_entry_data()
-        client: FitblocksConnectClient = entry_data.client
-        coordinator: FitblocksConnectCoordinator = entry_data.coordinator
+        """Handle the fitblocks_connect.enroll service."""
+        entry = _get_loaded_entry_or_raise(call.data.get(ATTR_CONFIG_ENTRY_ID))
+        runtime_data = _get_runtime_data_or_raise(entry)
+        client: FitblocksConnectClient = runtime_data.client
+        coordinator: FitblocksConnectCoordinator = runtime_data.coordinator
 
         start = call.data["start"]
         end = call.data["end"]
         class_type_id = call.data["class_type_id"]
+
+        if end <= start:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="end_time_after_start_time",
+            )
 
         try:
             status = await client.async_enroll(
@@ -123,17 +187,26 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             )
             LOGGER.info("Enroll status: %s", status)
         except FitblocksConnectAuthError as err:
-            raise HomeAssistantError(f"Authentication failed: {err}") from err
+            LOGGER.debug("Service enroll authentication failed", exc_info=True)
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="service_auth_failed",
+            ) from err
         except FitblocksConnectError as err:
-            raise HomeAssistantError(f"Enroll failed: {err}") from err
+            LOGGER.debug("Service enroll failed", exc_info=True)
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="service_call_failed",
+            ) from err
 
         await coordinator.async_request_refresh()
 
     async def handle_unenroll(call: ServiceCall) -> None:
-        """Service fitblocks_connect.unenroll."""
-        entry_data = await _async_get_single_entry_data()
-        client: FitblocksConnectClient = entry_data.client
-        coordinator: FitblocksConnectCoordinator = entry_data.coordinator
+        """Handle the fitblocks_connect.unenroll service."""
+        entry = _get_loaded_entry_or_raise(call.data.get(ATTR_CONFIG_ENTRY_ID))
+        runtime_data = _get_runtime_data_or_raise(entry)
+        client: FitblocksConnectClient = runtime_data.client
+        coordinator: FitblocksConnectCoordinator = runtime_data.coordinator
 
         schedule_registration_id = call.data["schedule_registration_id"]
         class_type_id = call.data["class_type_id"]
@@ -145,9 +218,17 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             )
             LOGGER.info("Unenroll success=%s", success)
         except FitblocksConnectAuthError as err:
-            raise HomeAssistantError(f"Authentication failed: {err}") from err
+            LOGGER.debug("Service unenroll authentication failed", exc_info=True)
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="service_auth_failed",
+            ) from err
         except FitblocksConnectError as err:
-            raise HomeAssistantError(f"Unenroll failed: {err}") from err
+            LOGGER.debug("Service unenroll failed", exc_info=True)
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="service_call_failed",
+            ) from err
 
         await coordinator.async_request_refresh()
 
@@ -157,6 +238,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         handle_enroll,
         schema=vol.Schema(
             {
+                vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
                 vol.Required("start"): cv.datetime,
                 vol.Required("end"): cv.datetime,
                 vol.Required("class_type_id"): cv.string,
@@ -170,6 +252,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         handle_unenroll,
         schema=vol.Schema(
             {
+                vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
                 vol.Required("schedule_registration_id"): cv.string,
                 vol.Required("class_type_id"): cv.string,
             }
@@ -179,34 +262,9 @@ async def _async_register_services(hass: HomeAssistant) -> None:
     domain_data["services_registered"] = True
 
 
-async def _async_unregister_services(hass: HomeAssistant) -> None:
-    """Services verwijderen als er geen entries meer zijn."""
-    domain_data = hass.data.get(DOMAIN)
-    if not domain_data or not domain_data.get("services_registered"):
-        return
-
-    hass.services.async_remove(DOMAIN, "enroll")
-    hass.services.async_remove(DOMAIN, "unenroll")
-    domain_data["services_registered"] = False
-
-
 async def _async_reload_entry(
     hass: HomeAssistant, entry: FitblocksConnectConfigEntry
 ) -> None:
-    """Herlaad de config entry na optieswijzigingen."""
+    """Reload the config entry after options changes."""
 
     await hass.config_entries.async_reload(entry.entry_id)
-
-
-def _async_loaded_runtime_data(
-    hass: HomeAssistant,
-) -> list[FitblocksConnectRuntimeData]:
-    """Return runtime data objects for loaded entries."""
-    entries = []
-    for entry in hass.config_entries.async_entries(DOMAIN):
-        if entry.state is not ConfigEntryState.LOADED:
-            continue
-        if entry.runtime_data is None:
-            continue
-        entries.append(cast(FitblocksConnectRuntimeData, entry.runtime_data))
-    return entries

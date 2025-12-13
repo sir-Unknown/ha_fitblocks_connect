@@ -7,7 +7,8 @@ from typing import Any
 import aiohttp
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import ConfigFlow, ConfigFlowResult, OptionsFlow
+from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .client import (
@@ -24,13 +25,14 @@ from .const import (
     DOMAIN,
     LOGGER,
 )
+from .models import FitblocksConnectConfigEntry
 
 
 class FitblocksConnectConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Config flow voor Fitblocks Connect."""
+    """Config flow for Fitblocks Connect."""
 
     VERSION = 1
-    MINOR_VERSION = 1
+    MINOR_VERSION = 2
 
     def __init__(self) -> None:
         """Initialize the Fitblocks Connect config flow."""
@@ -40,16 +42,16 @@ class FitblocksConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Stap voor handmatige configuratie via de UI."""
+        """Step for manual configuration via the UI."""
         self._errors = {}
 
         if user_input is None:
             return self._show_user_form()
 
-        base_url: str = user_input[CONF_BASE_URL]
-        box: str = user_input[CONF_BOX]
-        username: str = user_input["username"]
-        password: str = user_input["password"]
+        base_url: str = str(user_input[CONF_BASE_URL]).rstrip("/")
+        box: str = str(user_input[CONF_BOX]).strip("/")
+        username: str = str(user_input[CONF_USERNAME]).strip()
+        password: str = user_input[CONF_PASSWORD]
         display_name_in: str = user_input.get(CONF_DISPLAY_NAME, "").strip()
 
         session = async_get_clientsession(self.hass)
@@ -89,6 +91,14 @@ class FitblocksConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         if self._errors:
             return self._show_user_form(user_input)
 
+        self._async_abort_entries_match(
+            {
+                CONF_BASE_URL: base_url,
+                CONF_BOX: box,
+                CONF_USERNAME: username,
+            }
+        )
+
         if branding_name:
             title = branding_name
         else:
@@ -109,21 +119,87 @@ class FitblocksConnectConfigFlow(ConfigFlow, domain=DOMAIN):
             data={
                 CONF_BASE_URL: base_url,
                 CONF_BOX: box,
-                "username": username,
-                "password": password,
-                CONF_DISPLAY_NAME: display_name,
+                CONF_USERNAME: username,
+                CONF_PASSWORD: password,
             },
+            options={CONF_DISPLAY_NAME: display_name} if display_name else None,
         )
 
-    def is_matching(self, other_flow: ConfigFlow) -> bool:
-        """Return True if other_flow describes the same setup attempt."""
-        return False
+    async def async_step_reauth(self, _entry_data: dict[str, Any]) -> ConfigFlowResult:
+        """Perform reauth upon an authentication error."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Confirm reauth and update stored credentials."""
+        self._errors = {}
+
+        reauth_entry = self._get_reauth_entry()
+        data = reauth_entry.data
+
+        if user_input is not None:
+            username: str = str(
+                user_input.get(CONF_USERNAME, data.get(CONF_USERNAME, ""))
+            ).strip()
+            password: str = user_input[CONF_PASSWORD]
+
+            session = async_get_clientsession(self.hass)
+            client = FitblocksConnectClient(
+                hass=self.hass,
+                session=session,
+                base_url=str(data[CONF_BASE_URL]),
+                box=str(data[CONF_BOX]),
+                username=username,
+                password=password,
+            )
+
+            try:
+                await client.async_login()
+            except FitblocksConnectAuthError:
+                self._errors["base"] = "invalid_auth"
+            except FitblocksConnectError:
+                self._errors["base"] = "cannot_connect"
+            except (aiohttp.ClientError, TimeoutError):
+                LOGGER.exception("Network error during reauth")
+                self._errors["base"] = "cannot_connect"
+
+            if not self._errors:
+                new_data = dict(data)
+                new_data[CONF_USERNAME] = username
+                new_data[CONF_PASSWORD] = password
+                return self.async_update_reload_and_abort(reauth_entry, data=new_data)
+
+        schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_USERNAME,
+                    default=str(data.get(CONF_USERNAME, "")),
+                ): str,
+                vol.Required(CONF_PASSWORD): str,
+            }
+        )
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=schema,
+            errors=self._errors,
+        )
+
+    @staticmethod
+    def async_get_options_flow(
+        _config_entry: FitblocksConnectConfigEntry,
+    ) -> FitblocksConnectOptionsFlow:
+        """Return the options flow handler."""
+
+        return FitblocksConnectOptionsFlow()
 
     def _show_user_form(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Config formulier tonen."""
+        """Show the configuration form."""
         user_input = user_input or {}
 
         data_schema = vol.Schema(
@@ -137,12 +213,12 @@ class FitblocksConnectConfigFlow(ConfigFlow, domain=DOMAIN):
                     default=user_input.get(CONF_BOX, DEFAULT_BOX),
                 ): str,
                 vol.Required(
-                    "username",
-                    default=user_input.get("username", ""),
+                    CONF_USERNAME,
+                    default=user_input.get(CONF_USERNAME, ""),
                 ): str,
                 vol.Required(
-                    "password",
-                    default=user_input.get("password", ""),
+                    CONF_PASSWORD,
+                    default=user_input.get(CONF_PASSWORD, ""),
                 ): str,
                 vol.Optional(
                     CONF_DISPLAY_NAME,
@@ -155,4 +231,41 @@ class FitblocksConnectConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=data_schema,
             errors=self._errors,
+        )
+
+
+class FitblocksConnectOptionsFlow(OptionsFlow):
+    """Options flow to update the Fitblocks Connect display name."""
+
+    async def async_step_init(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Handle the Fitblocks Connect options."""
+
+        if user_input is not None:
+            display_name = user_input.get(CONF_DISPLAY_NAME, "").strip()
+            new_options = dict(self.config_entry.options)
+            if display_name:
+                new_options[CONF_DISPLAY_NAME] = display_name
+            else:
+                new_options.pop(CONF_DISPLAY_NAME, None)
+            return self.async_create_entry(title="", data=new_options)
+
+        current_display_name: str = self.config_entry.options.get(
+            CONF_DISPLAY_NAME
+        ) or self.config_entry.data.get(CONF_DISPLAY_NAME, "")
+
+        data_schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_DISPLAY_NAME,
+                    default=current_display_name,
+                ): str,
+            }
+        )
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=data_schema,
         )

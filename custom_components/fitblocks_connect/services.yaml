@@ -2,6 +2,12 @@ enroll:
   name: Enroll in lesson
   description: Enroll in a lesson in the Fitblocks Connect schedule.
   fields:
+    config_entry_id:
+      name: Config entry
+      description: Select the Fitblocks Connect config entry to use. Required when you have multiple entries.
+      selector:
+        config_entry:
+          integration: fitblocks_connect
     start:
       name: Start
       description: Start datetime of the lesson.
@@ -25,6 +31,12 @@ unenroll:
   name: Unenroll from lesson
   description: Unenroll from a lesson in the Fitblocks Connect schedule.
   fields:
+    config_entry_id:
+      name: Config entry
+      description: Select the Fitblocks Connect config entry to use. Required when you have multiple entries.
+      selector:
+        config_entry:
+          integration: fitblocks_connect
     schedule_registration_id:
       name: Schedule registration ID
       description: UUID of the schedule registration (scheduleRegistrationId).

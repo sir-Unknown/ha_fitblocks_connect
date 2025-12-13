@@ -29,7 +29,13 @@ async def async_get_config_entry_diagnostics(
         return diagnostics
 
     coordinator: TimestampDataUpdateCoordinator[Any] = runtime_data.coordinator
-    diagnostics["coordinator_data"] = coordinator.data
+    coordinator_data = coordinator.data or {}
+    events = coordinator_data.get("events")
+    diagnostics["coordinator_data"] = {
+        "events_count": len(events) if isinstance(events, list) else None,
+        "has_user_first_name": isinstance(coordinator_data.get("user_first_name"), str),
+        "last_known_credits": coordinator_data.get("last_known_credits"),
+    }
     diagnostics["coordinator_state"] = {
         "last_update_success": coordinator.last_update_success,
         "last_update_success_time": coordinator.last_update_success_time,

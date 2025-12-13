@@ -11,6 +11,78 @@
           "password": "Wachtwoord",
           "display_name": "Weergavenaam (optioneel)"
         }
+      },
+      "reauth_confirm": {
+        "title": "Opnieuw aanmelden",
+        "description": "Werk je inloggegevens bij om je account opnieuw te verbinden.",
+        "data": {
+          "username": "E-mail",
+          "password": "Wachtwoord"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Kan geen verbinding maken.",
+      "invalid_auth": "Ongeldige aanmelding.",
+      "unknown": "Onverwachte fout."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Fitblocks Connect-opties",
+        "description": "Pas aan hoe Home Assistant dit account toont.",
+        "data": {
+          "display_name": "Weergavenaam"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "config_entry_not_found": {
+      "message": "Config entry niet gevonden."
+    },
+    "config_entry_not_loaded": {
+      "message": "Config entry is niet geladen."
+    },
+    "config_entry_not_ready": {
+      "message": "Config entry is nog niet klaar."
+    },
+    "no_loaded_entries": {
+      "message": "Geen geladen config entries gevonden."
+    },
+    "multiple_entries_specify_id": {
+      "message": "Meerdere config entries gevonden. Specificeer `config_entry_id`."
+    },
+    "end_time_after_start_time": {
+      "message": "De eindtijd moet na de starttijd liggen."
+    },
+    "service_auth_failed": {
+      "message": "Aanmelden mislukt."
+    },
+    "service_call_failed": {
+      "message": "Service aanroep mislukt."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "remaining_credits": {
+        "name": "Resterende credits"
+      },
+      "enrolled_lessons": {
+        "name": "Ingeschreven lessen"
+      },
+      "lesson_1": {
+        "name": "Les 1"
+      },
+      "lesson_2": {
+        "name": "Les 2"
+      },
+      "lesson_3": {
+        "name": "Les 3"
+      },
+      "lesson_4": {
+        "name": "Les 4"
       }
     }
   }

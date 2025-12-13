@@ -1,6 +1,6 @@
 {
   "domain": "fitblocks_connect",
-  "name": "Fitblocks Connect",
+  "name": "Fitblocks",
   "version": "2025.12.03",
   "documentation": "https://github.com/sir-Unknown/ha_fitblocks_connect",
   "issue_tracker": "https://github.com/sir-Unknown/ha_fitblocks_connect/issues",
@@ -10,7 +10,5 @@
   "integration_type": "service",
   "iot_class": "cloud_polling",
   "requirements": [],
-  "loggers": [
-    "custom_components.fitblocks_connect"
-  ]
+  "loggers": ["custom_components.fitblocks_connect"]
 }

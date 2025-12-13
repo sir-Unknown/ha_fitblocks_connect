@@ -1,0 +1,89 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Fitblocks Connect",
+        "description": "Connect your Fitblocks Connect account.",
+        "data": {
+          "base_url": "Base URL",
+          "box": "Box",
+          "username": "Email",
+          "password": "Password",
+          "display_name": "Display name (optional)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate",
+        "description": "Update your credentials to reconnect your account.",
+        "data": {
+          "username": "Email",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect.",
+      "invalid_auth": "Invalid authentication.",
+      "unknown": "Unexpected error."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Fitblocks Connect options",
+        "description": "Update how Home Assistant shows this account.",
+        "data": {
+          "display_name": "Display name"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "config_entry_not_found": {
+      "message": "Config entry not found."
+    },
+    "config_entry_not_loaded": {
+      "message": "Config entry is not loaded."
+    },
+    "config_entry_not_ready": {
+      "message": "Config entry is not ready yet."
+    },
+    "no_loaded_entries": {
+      "message": "No loaded config entries found."
+    },
+    "multiple_entries_specify_id": {
+      "message": "Multiple config entries found. Specify `config_entry_id`."
+    },
+    "end_time_after_start_time": {
+      "message": "End time must be after start time."
+    },
+    "service_auth_failed": {
+      "message": "Authentication failed."
+    },
+    "service_call_failed": {
+      "message": "Service call failed."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "remaining_credits": {
+        "name": "Remaining credits"
+      },
+      "enrolled_lessons": {
+        "name": "Enrolled lessons"
+      },
+      "lesson_1": {
+        "name": "Lesson 1"
+      },
+      "lesson_2": {
+        "name": "Lesson 2"
+      },
+      "lesson_3": {
+        "name": "Lesson 3"
+      },
+      "lesson_4": {
+        "name": "Lesson 4"
+      }
+    }
+  }
+}

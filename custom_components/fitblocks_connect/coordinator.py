@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -21,51 +22,24 @@ from .client import (
     FitblocksConnectError,
 )
 from .const import DOMAIN, LOGGER, UPDATE_INTERVAL
+from .util import parse_fitblocks_datetime
+
+MAX_CONCURRENT_EVENT_DETAIL_REQUESTS = 4
 
 
-def is_user_enrolled(event: dict[str, Any]) -> bool:
-    """Determine of een event door de gebruiker is geboekt.
+def is_user_enrolled(event: Mapping[str, Any]) -> bool:
+    """Determine whether an event is booked by the user.
 
-    Sommige omgevingen gebruiken een andere vlag dan ``subscribed`` om aan te
-    geven dat een gebruiker staat ingeschreven. Deze helper kijkt naar diverse
-    varianten en naar het voorkomen van een ``scheduleRegistrationId``.
+    The Fitblocks schedule API uses the boolean `subscribed` field to indicate
+    whether the user is enrolled for an event.
     """
-
-    flags = (
-        "subscribed",
-        "is_subscribed",
-        "isSubscribed",
-        "user_subscribed",
-        "userSubscribed",
-        "user_enrolled",
-        "userEnrolled",
-        "registered",
-        "isRegistered",
-    )
-
-    for key in flags:
-        value = event.get(key)
-        if isinstance(value, bool) and value:
-            return True
-
-    registration_id = event.get("scheduleRegistrationId")
-    if isinstance(registration_id, (str, int)):
-        return True
-
-    registration_status = event.get("registrationStatus")
-    if isinstance(registration_status, str) and registration_status.lower() in (
-        "subscribed",
-        "registered",
-    ):
-        return True
-
-    return False
+    return event.get("subscribed") is True
 
 
 class FitblocksConnectCoordinator(
     TimestampDataUpdateCoordinator[dict[str, Any]],
 ):
-    """Coordinator die het rooster ophaalt en verrijkt met classTypeDetails."""
+    """Coordinator that fetches the schedule and enriches it with classTypeDetails."""
 
     def __init__(
         self,
@@ -83,9 +57,10 @@ class FitblocksConnectCoordinator(
         )
         self.client = client
         self._last_known_credits: int | None = None
+        self._detail_semaphore = asyncio.Semaphore(MAX_CONCURRENT_EVENT_DETAIL_REQUESTS)
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Rooster-data ophalen via schedule/json + lesdetails verrijken."""
+        """Fetch schedule data via schedule/json and enrich it with lesson details."""
         now: datetime = dt_util.utcnow()
         end: datetime = now + timedelta(days=7)
 
@@ -196,15 +171,13 @@ class FitblocksConnectCoordinator(
         if not class_type_id or not event_id or not start_str or not end_str:
             return None
 
-        start_dt = dt_util.parse_datetime(start_str)
-        end_dt = dt_util.parse_datetime(end_str)
-        if start_dt is None or end_dt is None:
+        if not isinstance(start_str, str) or not isinstance(end_str, str):
             return None
 
-        if start_dt.tzinfo is None:
-            start_dt = start_dt.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
-        if end_dt.tzinfo is None:
-            end_dt = end_dt.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+        start_dt = parse_fitblocks_datetime(start_str)
+        end_dt = parse_fitblocks_datetime(end_str)
+        if start_dt is None or end_dt is None:
+            return None
 
         return class_type_id, str(event_id), start_dt, end_dt
 
@@ -249,13 +222,29 @@ class FitblocksConnectCoordinator(
     ) -> asyncio.Task:
         """Create an async task to fetch class type details."""
         return asyncio.create_task(
-            self.client.async_get_class_type_details(
+            self._async_get_class_type_details_limited(
                 class_type_id=class_type_id,
                 event_id=event_id,
                 start=start,
                 end=end,
             )
         )
+
+    async def _async_get_class_type_details_limited(
+        self,
+        class_type_id: str,
+        event_id: str,
+        start: datetime,
+        end: datetime,
+    ) -> dict[str, Any]:
+        """Fetch class type details with a concurrency limit."""
+        async with self._detail_semaphore:
+            return await self.client.async_get_class_type_details(
+                class_type_id=class_type_id,
+                event_id=event_id,
+                start=start,
+                end=end,
+            )
 
     def _merge_event_details(
         self,
@@ -292,8 +281,9 @@ class FitblocksConnectCoordinator(
                     if dest == "credits_remaining" and isinstance(result[src], int):
                         credits_values.append(result[src])
 
-            if result.get("scheduleRegistrationId"):
-                item["scheduleRegistrationId"] = result["scheduleRegistrationId"]
+            schedule_registration_id = result.get("scheduleRegistrationId")
+            if schedule_registration_id:
+                item["scheduleRegistrationId"] = schedule_registration_id
 
             participants: list[str] = []
             for user in result.get("signedUpUsers", []):
@@ -311,6 +301,12 @@ class FitblocksConnectCoordinator(
                 my_first_name = self._extract_user_first_name(result, user_email)
                 if my_first_name:
                     item["user_first_name"] = my_first_name
+            elif schedule_registration_id:
+                my_first_name = self._extract_user_first_name_by_registration_id(
+                    result, schedule_registration_id
+                )
+                if my_first_name:
+                    item["user_first_name"] = my_first_name
 
     @staticmethod
     def _extract_user_first_name(result: dict[str, Any], user_email: str) -> str | None:
@@ -321,6 +317,21 @@ class FitblocksConnectCoordinator(
             email = (athlete.get("email") or "").lower()
             if email == user_email:
                 return athlete.get("first_name") or None
+        return None
+
+    @staticmethod
+    def _extract_user_first_name_by_registration_id(
+        result: dict[str, Any], schedule_registration_id: str
+    ) -> str | None:
+        """Return the first name for the logged-in user from classTypeDetails."""
+        for user in result.get("signedUpUsers", []):
+            if not isinstance(user, dict):
+                continue
+            user_registration_id = user.get("schedule_registration_id")
+            if user_registration_id != schedule_registration_id:
+                continue
+            first_name = user.get("first_name")
+            return first_name if isinstance(first_name, str) and first_name else None
         return None
 
     @staticmethod
