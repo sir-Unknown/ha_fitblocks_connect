@@ -1,4 +1,4 @@
-# Fitblocks Connect (Home Assistant custom integration)
+# Fitblocks Connect
 
 This custom integration connects Home Assistant to your Fitblocks Connect account and exposes your upcoming schedule as a calendar plus a few sensors.
 
