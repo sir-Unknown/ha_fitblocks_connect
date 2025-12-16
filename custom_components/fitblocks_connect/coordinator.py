@@ -62,15 +62,17 @@ class FitblocksConnectCoordinator(
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch schedule data via schedule/json and enrich it with lesson details."""
         now: datetime = dt_util.utcnow()
+        start: datetime = now - timedelta(days=31)
         end: datetime = now + timedelta(days=7)
 
         LOGGER.debug(
-            "FitblocksConnectCoordinator: fetching schedule now=%s end=%s",
+            "FitblocksConnectCoordinator: fetching schedule start=%s now=%s end=%s",
+            start,
             now,
             end,
         )
 
-        data = await self._async_fetch_schedule(now, end)
+        data = await self._async_fetch_schedule(start, end)
         await self._async_enrich_events(data, now)
         return data
 
