@@ -21,7 +21,14 @@ from .client import (
     FitblocksConnectClient,
     FitblocksConnectError,
 )
-from .const import DOMAIN, LOGGER, UPDATE_INTERVAL
+from .const import (
+    DAYTIME_END_HOUR,
+    DAYTIME_START_HOUR,
+    DOMAIN,
+    LOGGER,
+    UPDATE_INTERVAL_DAY,
+    UPDATE_INTERVAL_NIGHT,
+)
 from .util import parse_fitblocks_datetime
 
 MAX_CONCURRENT_EVENT_DETAIL_REQUESTS = 4
@@ -61,6 +68,7 @@ class FitblocksConnectCoordinator(
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch schedule data via schedule/json and enrich it with lesson details."""
+        self._update_refresh_interval()
         now: datetime = dt_util.utcnow()
         start: datetime = now - timedelta(days=31)
         end: datetime = now + timedelta(days=7)
@@ -75,6 +83,14 @@ class FitblocksConnectCoordinator(
         data = await self._async_fetch_schedule(start, end)
         await self._async_enrich_events(data, now)
         return data
+
+    def _update_refresh_interval(self) -> None:
+        """Set the refresh interval based on local time."""
+        now_local = dt_util.now()
+        if DAYTIME_START_HOUR <= now_local.hour < DAYTIME_END_HOUR:
+            self.update_interval = UPDATE_INTERVAL_DAY
+        else:
+            self.update_interval = UPDATE_INTERVAL_NIGHT
 
     async def _async_fetch_schedule(
         self, start: datetime, end: datetime

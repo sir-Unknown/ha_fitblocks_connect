@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
 import logging
+from datetime import timedelta
 from typing import Final
 
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
@@ -20,8 +20,13 @@ PLATFORMS: Final[list[Platform]] = [Platform.CALENDAR, Platform.SENSOR]
 # Timeout for HTTP calls
 REQUEST_TIMEOUT: Final[float] = 30  # seconds
 
-# Coordinator update interval: poll schedule every 30 minutes
-UPDATE_INTERVAL: Final = timedelta(minutes=30)
+# Coordinator update intervals: faster during daytime, slower overnight
+UPDATE_INTERVAL_DAY: Final = timedelta(minutes=5)
+UPDATE_INTERVAL_NIGHT: Final = timedelta(minutes=30)
+
+# Daytime window for faster updates (local time, 24h clock)
+DAYTIME_START_HOUR: Final = 8
+DAYTIME_END_HOUR: Final = 21
 
 # Config keys
 CONF_BASE_URL: Final = "base_url"
