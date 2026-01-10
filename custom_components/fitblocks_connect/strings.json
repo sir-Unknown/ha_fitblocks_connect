@@ -84,6 +84,9 @@
       },
       "lesson_4": {
         "name": "Lesson 4"
+      },
+      "last_api_refresh": {
+        "name": "Last API refresh"
       }
     }
   }

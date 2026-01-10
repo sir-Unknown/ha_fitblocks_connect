@@ -68,6 +68,7 @@ class FitblocksConnectCoordinator(
             update_interval=initial_interval,
         )
         self.client = client
+        self.last_request_time: datetime | None = None
         self._last_known_credits: int | None = None
         self._detail_semaphore = asyncio.Semaphore(MAX_CONCURRENT_EVENT_DETAIL_REQUESTS)
 
@@ -75,6 +76,7 @@ class FitblocksConnectCoordinator(
         """Fetch schedule data via schedule/json and enrich it with lesson details."""
         self._update_refresh_interval()
         now: datetime = dt_util.utcnow()
+        self.last_request_time = now
         start: datetime = now - timedelta(days=31)
         end: datetime = now + timedelta(days=7)
 

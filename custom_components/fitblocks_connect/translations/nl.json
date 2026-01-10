@@ -84,6 +84,9 @@
       },
       "lesson_4": {
         "name": "Les 4"
+      },
+      "last_api_refresh": {
+        "name": "Laatste API-verversing"
       }
     }
   }

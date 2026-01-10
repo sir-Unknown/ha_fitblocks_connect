@@ -139,6 +139,7 @@ class FitblocksConnectCalendarEntity(
         end_date: datetime,
     ) -> list[CalendarEvent]:
         """Return calendar events within a datetime range."""
+        await self.coordinator.async_request_refresh()
         events = list(self._build_events())
 
         def _in_range(ev: CalendarEvent) -> bool:
