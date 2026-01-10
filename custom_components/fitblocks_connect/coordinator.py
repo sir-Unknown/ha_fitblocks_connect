@@ -55,12 +55,17 @@ class FitblocksConnectCoordinator(
         client: FitblocksConnectClient,
     ) -> None:
         """Initialize the coordinator."""
+        initial_interval = (
+            UPDATE_INTERVAL_DAY
+            if DAYTIME_START_HOUR <= dt_util.now().hour < DAYTIME_END_HOUR
+            else UPDATE_INTERVAL_NIGHT
+        )
         super().__init__(
             hass=hass,
             logger=LOGGER,
             name=f"{DOMAIN} schedule",
             config_entry=config_entry,
-            update_interval=UPDATE_INTERVAL,
+            update_interval=initial_interval,
         )
         self.client = client
         self._last_known_credits: int | None = None
