@@ -225,30 +225,6 @@ class FitblocksConnectLessonSensor(BaseFitblocksConnectSensor):
             return None
         return upcoming[self._index - 1][1]
 
-
-class FitblocksConnectLastApiRefreshSensor(BaseFitblocksConnectSensor):
-    """Sensor showing the last time the Fitblocks API was requested."""
-
-    _attr_device_class = SensorDeviceClass.TIMESTAMP
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_entity_registry_enabled_default = False
-
-    def __init__(
-        self,
-        coordinator: FitblocksConnectCoordinator,
-        config_entry: FitblocksConnectConfigEntry,
-        display_name: str,
-    ) -> None:
-        """Initialize the last API refresh sensor."""
-        super().__init__(coordinator, config_entry, display_name)
-        self._attr_unique_id = f"{config_entry.entry_id}_last_api_refresh"
-        self._attr_translation_key = "last_api_refresh"
-
-    @property
-    def native_value(self) -> datetime | None:
-        """Return the last time the API refresh was requested."""
-        return self.coordinator.last_request_time
-
     @property
     def native_value(self) -> datetime | None:
         """Start time for the booked lesson."""
@@ -321,3 +297,27 @@ class FitblocksConnectLastApiRefreshSensor(BaseFitblocksConnectSensor):
             else None,
             "index": self._index,
         }
+
+
+class FitblocksConnectLastApiRefreshSensor(BaseFitblocksConnectSensor):
+    """Sensor showing the last time the Fitblocks API was requested."""
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(
+        self,
+        coordinator: FitblocksConnectCoordinator,
+        config_entry: FitblocksConnectConfigEntry,
+        display_name: str,
+    ) -> None:
+        """Initialize the last API refresh sensor."""
+        super().__init__(coordinator, config_entry, display_name)
+        self._attr_unique_id = f"{config_entry.entry_id}_last_api_refresh"
+        self._attr_translation_key = "last_api_refresh"
+
+    @property
+    def native_value(self) -> datetime | None:
+        """Return the last time the API refresh was requested."""
+        return self.coordinator.last_request_time
